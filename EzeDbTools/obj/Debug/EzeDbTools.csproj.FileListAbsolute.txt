@@ -1,0 +1,26 @@
+c:\users\baoli\documents\visual studio 2013\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe.config
+c:\users\baoli\documents\visual studio 2013\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.csprojResolveAssemblyReference.cache
+C:\Users\baoli\Documents\Visual Studio 2013\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe
+C:\Users\baoli\Documents\Visual Studio 2013\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.pdb
+C:\Users\baoli\Documents\Visual Studio 2013\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.exe
+C:\Users\baoli\Documents\Visual Studio 2013\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.pdb
+C:\Users\eden\Desktop\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe.config
+C:\Users\eden\Desktop\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.exe
+C:\Users\eden\Desktop\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.pdb
+C:\Users\eden\Desktop\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe
+C:\Users\eden\Desktop\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.pdb
+C:\Users\eden\Desktop\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.csprojResolveAssemblyReference.cache
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe.config
+F:\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.exe
+F:\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.pdb
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.pdb
+F:\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.csprojResolveAssemblyReference.cache
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\Libraries.EzeDbTools.dll
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\Library.EzeDbCommon.dll
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\Libraries.EzeDbTools.pdb
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\Library.EzeDbCommon.pdb
+F:\Projects\EzeDbTools\EzeDbTools\bin\Debug\dbmods.xml
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe.config
+X:\git\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.exe
+X:\git\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.pdb

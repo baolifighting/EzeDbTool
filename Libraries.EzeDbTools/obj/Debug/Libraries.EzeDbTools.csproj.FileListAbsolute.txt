@@ -1,0 +1,16 @@
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\obj\Debug\Libraries.EzeDbTools.csprojResolveAssemblyReference.cache
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Libraries.EzeDbTools.dll
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Libraries.EzeDbTools.pdb
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Library.EzeDbCommon.dll
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Library.EzeDbCommon.pdb
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\obj\Debug\Libraries.EzeDbTools.dll
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\obj\Debug\Libraries.EzeDbTools.pdb
+F:\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\dbmods.xml
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\dbmods.xml
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Libraries.EzeDbTools.dll
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Libraries.EzeDbTools.pdb
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Library.EzeDbCommon.dll
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\bin\Debug\Library.EzeDbCommon.pdb
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\obj\Debug\Libraries.EzeDbTools.csprojResolveAssemblyReference.cache
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\obj\Debug\Libraries.EzeDbTools.dll
+X:\git\Projects\EzeDbTools\Libraries.EzeDbTools\obj\Debug\Libraries.EzeDbTools.pdb
