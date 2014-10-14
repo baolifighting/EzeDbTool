@@ -1,0 +1,80 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{5B13A1CC-2F44-4E17-88CA-43C64367F12E}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Libraries.EzeDbTools</RootNamespace>
+    <AssemblyName>Libraries.EzeDbTools</AssemblyName>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Content\Constants.cs" />
+    <Compile Include="Content\ContentGenerator.cs" />
+    <Compile Include="Content\DBXmlManipulator.cs" />
+    <Compile Include="Content\DbXmlManipulatorContext.cs" />
+    <Compile Include="Content\XmlColumnAlias.cs" />
+    <Compile Include="Content\XmlManipulators\SchedulesManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\ScopesManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\SettingCategoriesManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\SettingDefinitionsManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\SettingGroupSettingsManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\SettingGroupsManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\SettingsManipulator.cs" />
+    <Compile Include="Content\XmlManipulators\SystemAlertTypesManipulator.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Schema\Constants.cs" />
+    <Compile Include="Schema\DbSchemaEventArgs.cs" />
+    <Compile Include="Schema\DbXmlManipulator.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="dbmods.xml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="ExternalSqlScripts\SqlServerDbcreate-7.2.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Library.EzeDbCommon\Libraries.EzeDbCommon.csproj">
+      <Project>{97deedf5-70c8-4917-810f-9cd2166631db}</Project>
+      <Name>Libraries.EzeDbCommon</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

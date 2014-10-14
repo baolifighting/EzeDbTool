@@ -1,0 +1,906 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mods>
+  <mod author="DB Don" from="0.0" to="7.2.0.10" schema="2" date="11/20/09">
+    <comment>Db creation 7.0 style</comment>
+    <steps>
+      <step type="external_sql">
+        <![CDATA[SqlServerDbcreate-7.2.sql]]>
+      </step>
+      <step type="external_csharp">
+        <![CDATA[dbcreate-7.0.cs]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="olivier" from="7.2.0.10" to="7.2.0.11" date="10/26/12">
+    <comment>Remove appliance Status and Requested status, these are handled through a service call now.</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+ALTER TABLE appliances ADD [disabled] tinyint NOT NULL DEFAULT 0;
+UPDATE appliances SET disabled=1 WHERE requestedStatus=6;
+--ALTER TABLE appliances DROP COLUMN requestedStatus;
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="dlow" from="7.2.0.11" to="7.2.0.11" tminor="220" date="11/28/12">
+    <comment>Clean event trimming schedules Bug 31433</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+	delete e1 from  eventtypetrimmingschedules e1, eventtypetrimmingschedules e2 where
+	e1.eventtypetrimmingscheduleid < e2.eventtypetrimmingscheduleid and e1.eventTypeId = e2.eventTypeId and 
+((e1.genericEventDefinitionId is null and e2.genericEventDefinitionId is null) or e1.genericEventDefinitionId = e2.genericEventDefinitionId)
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="rio" from="7.2.0.11" fminor="220" to="7.2.0.11" tminor="223" date="11/28/2012" >
+    <comment>what's used to be hardware overlay needs to be changed to no overlay. just for QA, not needed for production </comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+UPDATE  settingvalues
+SET     value = '2'
+FROM    scopes ,
+				channeldrivers ,
+				settingvalues
+				INNER JOIN settingdefinitions ON settingvalues.settingDefinitionId = settingdefinitions.settingDefinitionId
+				INNER JOIN settings ON settingdefinitions.settingId = settings.settingId
+				INNER JOIN components ON settingvalues.componentId = components.componentId
+				INNER JOIN channels ON components.componentNumber = channels.channelid
+WHERE   settings.name = 'UseDateTimeOverlayAnalog'
+				AND scopes.name = 'Cameras'
+				AND scopes.scopeid = components.scopeid
+				AND channels.channeltype = 1
+				AND channeldrivers.name = 'StretchAnalog'
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="dlow" from="7.2.0.11" fminor="223" to="7.2.0.11" tminor="254" date="12/03/2012" >
+    <comment>Adjust constrants for appliances and channels</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+ALTER TABLE channels DROP CONSTRAINT FK1_Channels_Appliances;
+ALTER TABLE channels ADD CONSTRAINT FK1_Channels_Appliances FOREIGN KEY (applianceid) REFERENCES appliances(applianceid) ON DELETE NO ACTION ON UPDATE CASCADE;
+ALTER TABLE userappliances DROP CONSTRAINT FK1_userappliances_appliances;
+ALTER TABLE userappliances ADD CONSTRAINT FK1_userappliances_appliances FOREIGN KEY (applianceguid) REFERENCES appliances([guid]) ON DELETE CASCADE ON UPDATE CASCADE;
+			 ]]>
+      </step>
+      <step type="inline_csharp">
+        <![CDATA[
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Data;
+using System.IO;
+using ThreeVR.Db.Sql;
+using System.Text;
+	/*
+	[assemblies:System.Data.dll]
+	*/
+
+namespace ThreeVR.DBTools.ExternalCSharp
+{
+		using IDataReader = System.Data.IDataReader;
+		using DataReader = ThreeVR.Db.Sql.DataReader;
+
+		public class CleanAppliances
+		{
+				[STAThread]
+				public static bool Execute(DataReader dataReader)
+				{
+						bool guidUnique = false;
+						IDataReader reader = dataReader.ExecuteQuery("SELECT * FROM sys.sysobjects WHERE name='guids'");
+						if (reader.Read())
+						{
+								var create = reader.GetString(0);
+								if (create=="guids")
+								{
+										guidUnique = true;
+								}
+						}
+						reader.Close();
+						
+						var sqlStmt = "select a1.applianceid, a1.deleted, a2.applianceid, a2.deleted from appliances a1, appliances a2 where a1.applianceid < a2.applianceid and a1.guid = a2.guid;";
+						reader = dataReader.ExecuteQuery(sqlStmt);
+						var processed = new List<int>();
+						while (reader.Read())
+						{
+								bool resolved = false;
+								try
+								{
+										var a1Id = reader.GetInt32(0);
+										var a1Deleted = reader.GetBoolean(1);
+										var a2Id = reader.GetInt32(2);
+										var a2Deleted = reader.GetBoolean(3);
+
+										if (processed.Contains(a1Id))
+										{
+												resolved = true;
+										}
+										else if (a1Deleted)
+										{
+												cleanAppliance(a1Id);
+										}
+
+										if (processed.Contains(a2Id))
+										{
+												resolved = true;
+										}
+										else if (a2Deleted)
+										{
+												cleanAppliance(a1Id);
+										}
+
+										if (!resolved)
+										{
+												using (DataReader readerGuid = new DataReader(false))
+												{
+														var applianceid = a2Deleted ? a2Id : a1Deleted ? a1Id : a2Id;
+														string sqlGuid = @"update appliances set guid = @guid where applianceid = @appid";
+														readerGuid.ExecuteNonQuery(sqlGuid, new List<SqlParameter> { new SqlParameter("@guid", Guid.NewGuid()), new SqlParameter("@appid", applianceid) }.ToArray());
+														processed.Add(applianceid);
+												}
+										}
+								}
+								catch
+								{
+								}
+						}
+						reader.Close();
+						
+						if (!guidUnique)
+						{
+								dataReader.ExecuteNonQuery("ALTER TABLE appliances ADD CONSTRAINT guids unique(guid);");
+						}
+						return true;
+				}
+
+				private static void cleanAppliance(int applianceId)
+				{
+						using (DataReader dataReader = new DataReader(false))
+						{
+								try
+								{
+										dataReader.ExecuteNonQuery("delete from regionappliances where applianceid = " + applianceId + ";"); 
+										dataReader.ExecuteNonQuery("delete from channels where applianceid in (select applianceid from appliances where deleted = 1 and applianceid = " + applianceId +
+												" ) and channelid not in (select distinct channelid from eventsindex where applianceid = applianceid = " + applianceId + ");");
+										dataReader.ExecuteNonQuery("delete from userappliances ua using appliances a where  ua.applianceguid = a.guid and a.applianceid = " + applianceId + "");
+								}
+								catch (Exception ex)
+								{
+								}
+						}
+				}
+		}
+}
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="marcus" from="7.2.0.11" fminor="254" to="7.2.0.11" tminor="325" date="12/17/2012" >
+    <comment>Remove a temporary appliances.guid index (only if it exists - it may or may not depending on if the system has previous mods executed against it or not)</comment>
+    <steps>
+      <step type="inline_csharp">
+        <![CDATA[
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Data;
+using System.IO;
+using ThreeVR.Db.Sql;
+using System.Text;
+	/*
+	[assemblies:System.Data.dll]
+	*/
+
+namespace ThreeVR.DBTools.ExternalCSharp
+{
+		using IDataReader = System.Data.IDataReader;
+		using DataReader = ThreeVR.Db.Sql.DataReader;
+
+		public class CleanAppliances
+		{
+				[STAThread]
+				public static bool Execute(DataReader dataReader)
+				{
+						// This may or may not succeed, depending on if the index exists. We don't care - if we can remove it, great, if it wasn't there in the first place thats OK too.
+						try
+						{
+								var dropIndexSql=@"IF EXISTS ( SELECT  *
+																							FROM    sys.sysobjects
+																							WHERE   name = 'temp_appliances_guid_idx' ) 
+																			DROP INDEX temp_appliances_guid_idx ON appliances";
+								dataReader.ExecuteNonQuery(dropIndexSql);
+						}
+						catch (Exception ignored) {}
+						
+						return true;
+				}
+		}
+}
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="dlow" from="7.2.0.11" fminor="325" to="7.2.0.11"  tminor="339" date="12/19/12">
+    <comment>Clean event type id in savedsearchs</comment>
+    <steps>
+      <step type="inline_csharp">
+        <![CDATA[
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Data;
+using System.IO;
+using ThreeVR.Db.Sql;
+using System.Text;
+	/*
+	[assemblies:System.Data.dll]
+	*/
+
+namespace ThreeVR.DBTools.ExternalCSharp
+{
+		using IDataReader = System.Data.IDataReader;
+		using DataReader = ThreeVR.Db.Sql.DataReader;
+
+		public class UpdateSavedSearchEventType
+		{
+				[STAThread]
+				public static bool Execute(DataReader dataReader)
+				{
+						var map = new Dictionary<long, string>();
+						var sqlStmt = @"select savedsearchid, predicatexml from savedsearches";
+						IDataReader reader = dataReader.ExecuteQuery(sqlStmt);
+
+						while (reader.Read())
+						{
+								var id = reader.GetInt64(0);
+								var search = reader.GetString(1);
+								search = search.Replace("eventtype.id", "eventtype");
+								map[id] = search;
+						}
+						reader.Close();
+
+						var stmt = "update savedsearches set predicatexml = @src where savedsearchid = @id";
+						foreach (var pair in map)
+						{
+								dataReader.ExecuteNonQuery(stmt, new List<SqlParameter> { new SqlParameter("@src", pair.Value), new SqlParameter("@id", pair.Key) });
+						}
+
+						return true;
+				}
+		}
+}
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="dlow" from="7.2.0.11" fminor="339" to="7.2.0.11" tminor="350" date="12/20/2012" >
+    <comment>Adjust constrants for appliances and channels</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+	update healthalerts set applianceid = (select applianceid from appliances where ishost = 1) where applianceid is null;
+	--ALTER TABLE healthalerts ALTER COLUMN applianceid bigint NOT NULL;
+	IF EXISTS ( SELECT	c.name
+			FROM	sys.sysobjects c
+			WHERE	name = 'FK1_Systemalerts_Appliances' ) 
+	ALTER TABLE dbo.healthalerts DROP CONSTRAINT FK1_Systemalerts_Appliances	
+IF EXISTS ( SELECT	*
+			FROM	sys.sysindexes i
+			WHERE	i.name = 'FK1_Systemalerts_Appliances' ) 
+	DROP INDEX healthalerts.FK1_Systemalerts_Appliances
+ALTER TABLE dbo.healthalerts ALTER COLUMN applianceid BIGINT NOT NULL;
+ALTER TABLE dbo.healthalerts
+ADD CONSTRAINT FK1_Systemalerts_Appliances FOREIGN KEY (applianceid) REFERENCES appliances (applianceid) ON DELETE CASCADE ON UPDATE CASCADE
+	]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="marcus" from="7.2.0.11" fminor="350" to="7.2.0.11" tminor="677" date="3/12/2012">
+    <comment>Ensure that the User role does not have permissions that it shouldn't. See bug 31893..</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+DELETE FROM permissions WHERE roleguid = (SELECT guid FROM roles WHERE name = 'User') AND name IN ('ExportVideo', 'EditView');
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="jsaur" from="7.2.0.11" fminor="677" to="7.2.0.11" tminor="721" date="3/19/2013" >
+    <comment>
+      This is a blank mod to address bug 32461. I needed to add a mod to update the alternate settings values but didn't want to duplicate the huge settings
+      table again so I'm making the original mod blank and moving its logic to the next mod where I've including alternate settings as well
+    </comment>
+    <steps>
+      <step></step>
+    </steps>
+  </mod>
+  <mod author="jsaur" from="7.2.0.11" fminor="721" to="7.2.0.11" tminor="819" date="4/5/2013" >
+    <comment>Update channel setting values in the database to match their new values changed in bug 28799</comment>
+    <steps>
+      <step type="inline_csharp">
+        <![CDATA[
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.Data;
+using System.IO;
+using ThreeVR.Db.Sql;
+using System.Text;
+	/*
+	[assemblies:System.Data.dll]
+	*/
+
+namespace ThreeVR.DBTools.ExternalCSharp
+{
+		using IDataReader = System.Data.IDataReader;
+		using DataReader = ThreeVR.Db.Sql.DataReader;
+
+		public class UpdateChannelSettingValues
+		{
+				//value table has columns: Setting, CameraDriver, OldValue, NewValue
+				private static readonly string[,] valueTable = new string[174, 4]
+						{
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","halfx976x736x1616x1216","320x240x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","halfx656x496x1936x1456","640x480x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","halfx592x448x2000x1504","704x528x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","halfx272x208x2320x1744","1024x768x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","halfx16x256x2576x1696","1280x720x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","halfx0x0x2560x1920","1280x960x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","fullx656x464x1936x1488","1280x1024x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","fullx496x368x2096x1568","1600x1200x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","fullx336x368x2256x1568","1920x1200x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","fullx272x208x2320x1744","2048x1536x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV20185AV20365","fullx0x0x2560x1920","2560x1920x2560x1920"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","halfx976x736x1616x1216","320x280x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","halfx656x496x1936x1456","640x480x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","halfx592x448x2000x1504","704x528x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","halfx272x208x2320x1744","1024x768x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","halfx16x256x2576x1696","1280x720x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","halfx0x0x2592x1920","1296x960x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","fullx656x464x1936x1488","1280x1024x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","fullx496x368x2096x1568","1600x1200x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","fullx336x368x2256x1568","1920x1200x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","fullx272x208x2320x1744","2048x1536x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV5105","fullx0x0x2592x1944","2592x1944x2592x1944"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3135","halfx0x0x2048x1536","1024x768x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3135","fullx0x0x2048x1536","2048x1536x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","halfx704x528x1344x1008","320x240x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","halfx384x288x1664x1248","640x480x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","halfx320x240x1728x1296","704x528x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","halfx0x0x2048x1536","1024x768x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","fullx384x416x1664x1136","1280x720x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","fullx384x256x1664x1280","1280x1024x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","fullx224x176x1824x1376","1600x1200x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","fullx64x224x1984x1304","1920x1080x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","fullx64x176x1984x1376","1920x1200x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV3105","fullx0x0x2048x1536","2048x1536x2048x1536"},
+{"IpCameras.Mpeg4Resolution","ArecontAV8365AV8185","halfx480x360x1120x840","320x240x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV8365AV8185","halfx160x120x1440x1080","640x480x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV8365AV8185","halfx96x72x1504x1128","704x528x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV8365AV8185","halfx0x0x1600x1184","800x592x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV8365AV8185","fullx288x216x1312x984","1024x768x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV8365AV8185","fullx0x0x1600x1184","1600x1184x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV2105","halfx480x360x1120x840","320x240x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV2105","halfx160x120x1440x1080","640x480x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV2105","halfx96x72x1504x1128","704x528x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV2105","halfx0x0x1600x1184","800x592x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV2105","fullx288x216x1312x984","1024x768x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV2105","fullx0x0x1600x1184","1600x1184x1600x1184"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","halfx320x272x960x752","20x240x1280x1024"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","halfx0x32x1280x992","640x480x1280x1024"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","halfx0x0x1280x1024","640x512x1280x1024"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","fullx288x256x992x784","704x528x1280x1024"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","fullx128x128x1152x896","1024x768x1280x1024"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","fullx0x160x1280x880","1280x720x1280x1024"},
+{"IpCameras.Mpeg4Resolution","ArecontAV1305","fullx0x0x1280x1024","1280x1024x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","halfx976x736x1616x1216","320x240x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","halfx656x496x1936x1456","640x480x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","halfx592x448x2000x1504","704x528x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","halfx272x208x2320x1744","1024x768x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","halfx16x256x2576x1696","1280x720x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","halfx0x0x2560x1920","1280x960x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","fullx656x464x1936x1488","1280x1024x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","fullx496x368x2096x1568","1600x1200x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","fullx336x368x2256x1568","1920x1200x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","fullx272x208x2320x1744","2048x1536x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV20185AV20365","fullx0x0x2560x1920","2560x1920x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV3130","halfx0x0x2048x1536","1024x768x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3130","fullx0x0x2048x1536","2048x1536x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","halfx480x360x1120x840","320x240x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","halfx448x336x1152x864","320x240x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","halfx160x120x1440x1080","640x480x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","halfx96x72x1504x1128","704x528x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","halfx0x0x1600x1200","704x528x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","fullx288x216x1312x984","1024x768x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","fullx160x240x1440x960","1280x720x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","fullx160x88x1440x1112","1280x1024x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV8360AV8180","fullx0x0x1600x1200","1600x1200x2560x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx976x736x1616x1216","320x240x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx944x704x1648x1232","352x264x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx656x496x1936x1456","640x480x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx592x448x2000x1504","704x528x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx496x368x2096x1568","800x600x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx272x208x2320x1744","1024x768x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx16x256x2576x1696","1280x720x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","halfx0x0x2592x1944","1296x968x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","fullx656x464x1936x1488","1280x1024x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","fullx496x368x2096x1568","1600x1200x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","fullx336x432x2256x1512","1920x1080x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","fullx336x368x2256x1568","1920x1200x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","fullx272x208x2320x1744","2048x1536x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5100","fullx0x0x2592x1944","2592x1944x2592x1944"},
+{"IpCameras.MjpegResolution","ArecontAV5105","halfx976x736x1616x1216","320x240x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","halfx656x496x1936x1456","640x480x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","halfx592x448x2000x1504","704x528x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","halfx272x208x2320x1744","1024x768x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","halfx16x256x2576x1696","1280x720x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","halfx0x0x2592x1920","1280x960x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","fullx656x464x1936x1488","1280x1024x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","fullx496x368x2096x1568","1600x1200x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","fullx336x368x2256x1568","1920x1200x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","fullx272x208x2320x1744","2048x1536x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV5105","fullx0x0x2592x1944","2592x1944x2592x1920"},
+{"IpCameras.MjpegResolution","ArecontAV3135","halfx0x0x2048x1536","1024x768x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3135","fullx0x0x2048x1536","2048x1536x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","halfx704x528x1344x1008","320x240x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","halfx384x288x1664x1248","640x480x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","halfx320x240x1728x1296","704x528x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","halfx0x0x2048x1536","1024x768x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","fullx384x416x1664x1136","1280x720x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","fullx384x256x1664x1280","1280x1024x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","fullx224x176x1824x1376","1600x1200x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","fullx64x224x1984x1304","1920x1080x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","fullx64x176x1984x1376","1920x1200x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3105","fullx0x0x2048x1536","2048x1536x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV8365AV8185","halfx480x360x1120x840","320x240x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV8365AV8185","halfx160x120x1440x1080","640x480x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV8365AV8185","halfx96x72x1504x1128","704x528x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV8365AV8185","halfx0x0x1600x1184","800x592x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV8365AV8185","fullx288x216x1312x984","1024x768x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV8365AV8185","fullx0x0x1600x1184","1600x1184x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV2105","halfx480x360x1120x840","320x240x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV2105","halfx160x120x1440x1080","640x480x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV2105","halfx96x72x1504x1128","704x528x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV2105","halfx0x0x1600x1184","800x592x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV2105","fullx288x216x1312x984","1024x768x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV2105","fullx0x0x1600x1184","1600x1184x1600x1184"},
+{"IpCameras.MjpegResolution","ArecontAV1305","halfx320x272x960x752","320x240x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1305","halfx0x32x1280x992","640x480x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1305","halfx0x0x1280x1024","640x512x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1305","fullx288x256x992x784","704x528x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1305","fullx128x128x1152x896","1024x768x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1305","fullx0x160x1280x880","1280x720x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1305","fullx0x0x1280x1024","1280x1024x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","halfx320x272x960x752","320x240x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","halfx288x248x992x776","352x264x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","halfx0x32x1280x992","640x480x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","halfx0x0x1280x1024","640x512x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","fullx288x248x992x776","704x528x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","fullx240x208x1040x808","800x600x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","fullx128x128x1152x896","1024x768x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","fullx0x152x1280x872","1280x720x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV1300","fullx0x0x1280x1024","1280x1024x1280x1024"},
+{"IpCameras.MjpegResolution","ArecontAV2100","halfx480x360x1120x840","320x240x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","halfx448x336x1152x864","352x264x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","halfx160x120x1440x1080","640x480x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","halfx96x72x1504x1128","704x528x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","halfx0x0x1600x1200","800x600x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","fullx288x216x1312x984","1024x768x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","fullx160x240x1440x960","1280x720x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","fullx160x88x1440x1112","1280x1024x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV2100","fullx0x0x1600x1200","1600x1200x1600x1200"},
+{"IpCameras.MjpegResolution","ArecontAV3100","halfx704x528x1344x1008","320x240x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","halfx672x504x1376x1032","352x264x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","halfx384x288x1664x1248","640x480x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","halfx320x240x1728x1296","704x528x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","halfx224x168x1824x1368","800x600x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","halfx0x0x2048x1536","1024x768x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","fullx384x408x1664x1128","1280x720x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","fullx384x256x1664x1280","1280x1024x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","fullx224x168x1824x1368","1600x1200x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","fullx64x224x1984x1304","1920x1080x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","fullx64x168x1984x1368","1920x1200x2048x1536"},
+{"IpCameras.MjpegResolution","ArecontAV3100","fullx0x0x2048x1536","2048x1536x2048x1536"},
+{"IpCameras.ColorEnabled","ArecontAV3130","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV5100","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV10005","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV5105","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV3135","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV3105","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV8365AV8185","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV2805","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV2105","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV1305","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV1300","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV2100","6","5"},
+{"IpCameras.ColorEnabled","ArecontAV3100","6","5"},
+						};
+		
+				public static bool Execute(DataReader dataReader)
+				{
+						for (int i=0; i<valueTable.Length; i++)
+						{
+								try
+								{
+										string sqlStmt = string.Format("UPDATE settingvalues SET VALUE='{0}' WHERE VALUE='{1}' AND settingdefinitionid IN (SELECT settingdefinitionid FROM settingdefinitions WHERE settingid = (SELECT settingid FROM settings WHERE NAME='{2}') AND channelDriverId=(SELECT channeldriverid FROM channeldrivers WHERE NAME='{3}'))", valueTable[i, 3], valueTable[i, 2], valueTable[i, 0], valueTable[i, 1]);
+										dataReader.ExecuteNonQuery(sqlStmt);
+										string altSqlStmt = string.Format(@"UPDATE	alternatesettingvalues
+																			SET		alternatesettingvalues.setting = '{0}'
+																			FROM	alternatesettingvalues
+																					INNER JOIN settingvalues ON alternatesettingvalues.settingvalueid = settingvalues.settingValueId
+																					INNER JOIN settingdefinitions ON settingvalues.settingDefinitionId = settingdefinitions.settingDefinitionId
+																					INNER JOIN settings ON settingdefinitions.settingId = settings.settingId
+																					INNER JOIN channeldrivers ON ( settingDefinitions.channelDriverId = channeldrivers.channelDriverId )
+																			WHERE	alternatesettingvalues.setting = '{1}'
+																					AND settings.name = '{2}'
+																					AND channeldrivers.name = '{3}'", valueTable[i, 3], valueTable[i, 2], valueTable[i, 0], valueTable[i, 1]);
+																													dataReader.ExecuteNonQuery(altSqlStmt);
+								}
+								catch (Exception ignored) { }
+						}
+						return true;
+				}
+		}
+}
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="olivier" from="7.2.0.11" fminor="819" to="7.2.0.11" tminor="853" date="4/15/2013" >
+    <comment>Add an extra column to the event type trimming schedules to keep track of frame GC</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+				-- because sqlserver do not need to update this step, so we move it to the script file(SqlServerDbCreate-7.2.sql).
+				--alter table eventtypetrimmingschedules add column lastframegc datetime default '1970-01-01 00:00:00' after lastdatatime;
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="marcus" from="7.2.0.11" fminor="853" to="7.2.0.11" tminor="880" date="4/22/2013">
+    <comment>Change the FK from userregions/regions to CASCADE updates and deletes.</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+-- Move to create database script file
+--ALTER TABLE userregions DROP FOREIGN KEY FK1_userregions_regions;
+
+--ALTER TABLE userregions
+--  ADD CONSTRAINT FK1_userregions_regions
+--  FOREIGN KEY (regionname)
+--    REFERENCES regions(name)
+--    ON DELETE CASCADE
+--    ON UPDATE CASCADE;
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="baohua" from="7.2.0.11" fminor="880" to="7.2.0.11" tminor="899" date="4/25/2013">
+    <comment>updates axis IpCameras priority default values</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[  
+UPDATE	settingvalues
+SET		settingvalues.value = 'quality'
+FROM	settingvalues
+		INNER JOIN settingdefinitions ON settingvalues.settingDefinitionId = settingdefinitions.settingDefinitionId
+		INNER JOIN settings ON settingdefinitions.settingId = settings.settingId
+		INNER JOIN components ON settingvalues.componentId = components.componentId
+		INNER JOIN channels ON channelid = componentNumber
+		INNER JOIN channeldrivers ON channels.channelDriverId = channeldrivers.channelDriverId
+WHERE	settings.name = 'IpCameras.Priority'
+		AND channeldrivers.name IN ( 'Axis207', 'Axis207MW', 'Axis207W',
+									 'Axis209FD', 'Axis209FDR', 'Axis209MFD',
+									 'Axis209MFDR', 'Axis210', 'Axis210A',
+									 'Axis211', 'Axis211A', 'Axis211M',
+									 'Axis211W', 'Axis212PTZ', 'Axis2130PTZ',
+									 'Axis213PTZ', 'Axis214PTZ', 'Axis215PTZ',
+									 'Axis215PTZE', 'Axis216FD', 'Axis216FDV',
+									 'Axis216MFD', 'Axis221', 'Axis223M',
+									 'Axis225FD', 'Axis231DPlus',
+									 'Axis232DPlus', 'Axis233', 'Axis241Q',
+									 'Axis241QA', 'Axis241S', 'Axis243QBlade',
+									 'Axis243SA', 'Axis247S', 'AxisM1011',
+									 'AxisM1011W', 'AxisM1031W', 'AxisM1054',
+									 'AxisM11Series', 'AxisM3011', 'AxisM3014',
+									 'AxisM31RSeries', 'AxisM32Series',
+									 'AxisM7001', 'AxisM7014', 'AxisNeteye200',
+									 'AxisNeteye200Plus', 'AxisP1311',
+									 'AxisP1343', 'AxisP1343E', 'AxisP1344',
+									 'AxisP1344E', 'AxisP1346', 'AxisP1346E',
+									 'AxisP1347', 'AxisP1347E', 'AxisP3301',
+									 'AxisP3304', 'AxisP3343', 'AxisP3343V',
+									 'AxisP3343VE', 'AxisP3344', 'AxisP3344V',
+									 'AxisP3344VE', 'AxisP3346', 'AxisP3346V',
+									 'AxisP3346VE', 'AxisP5532', 'AxisP5532E',
+									 'AxisP5534', 'AxisP5534E', 'AxisQ1755',
+									 'AxisQ1755E', 'AxisQ1910', 'AxisQ1910E',
+									 'AxisQ1921', 'AxisQ1921E', 'AxisQ6032',
+									 'AxisQ6032EPTZ', 'AxisQ6034',
+									 'AxisQ6034EPTZ', 'AxisQ7401', 'AxisQ7404',
+									 'AxisQ7406', 'GenericAxisPtz' )
+		AND settingvalues.value = 'Image Quality'
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="olivier" from="7.2.0.11" fminor="899" to="7.2.0.11" tminor="912" date="4/26/2013">
+    <comment>bug 32462: adjust arecont nightgain setting values when we upgrade from 7.0 to fall in the correct range. This mod has no affect on systems already upgraded from 7.0</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+UPDATE	settingvalues
+SET		settingvalues.value = CAST(ROUND(SQRT(( 476035560425 / 4096 )
+										 - POWER(settingvalues.value - ( 46125
+																/ 64 ), 2))
+									- ( 21521 / 2 ), 0) AS INTEGER)
+FROM	settingvalues
+		INNER JOIN settingdefinitions ON settingvalues.settingDefinitionId = settingdefinitions.settingDefinitionId
+		INNER JOIN settings ON settingdefinitions.settingId = settings.settingId
+		INNER JOIN channeldrivers ON settingdefinitions.channelDriverId = channeldrivers.channelDriverId
+		INNER JOIN plugins ON channeldrivers.channelsettingsdriverguid = plugins.guid
+WHERE	settings.name = 'IpCameras.Nightgain'
+		AND plugins.name = 'ThreeVR.Libraries.DataInput.IpCameraConfiguration.ArecontCameraSettings'
+		AND settingdefinitions.isVisible = 1
+		AND settingvalues.value >= 64
+		AND settingvalues.value <= 512;
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="dlow" from="7.2.0.11" fminor="912" to="7.2.0.11" tminor="918" date="02/15/2013" >
+    <comment>Refactor DataInput to CameraDriver</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+	update plugins set name = replace(name, '.DataInput.', '.CameraDriver.');
+	update plugins set name = replace(name, '.PtzAdapter.', '.CameraDriver.');
+	update plugins set name = replace(name, 'Interface', 'PtzDriver') where name like '%CameraDriver%';  
+	update plugins set name = replace(name, '.IpCameraConfiguration.', '.Network.');
+		]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="marcus" from="7.2.0.11" fminor="918" to="7.2.0.11" tminor="966" date="05/07/2013" >
+    <comment>Set the SpotMonitorLocalMaxMemory setting to 1024 if and only if this appliance's hardwareversion is 'I' (a.k.a. P2)</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+UPDATE	settingvalues
+SET		value = '1024'
+FROM	settingvalues
+		INNER JOIN settingdefinitions ON settingvalues.settingDefinitionId = settingdefinitions.settingDefinitionId
+		INNER JOIN settings ON settingdefinitions.settingId = settings.settingId
+WHERE	name = 'SpotMonitorLocalMaxMemory'
+		AND ( ( SELECT	COUNT(a.applianceid)
+				FROM	APPLIANCES a
+				WHERE	a.hardwareversion = 'I'
+						AND a.ishost = 1
+				) = 1 )
+		]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="dlow" from="7.2.0.11" fminor="966" to="7.2.0.11" tminor="975" date="05/08/2013" >
+    <comment>clean dup channels on the ES caused by a 7.2.2 Bug 32614</comment>
+    <steps>
+      <step type="inline_csharp">
+        <![CDATA[
+using System;
+using System.Collections.Generic;
+/*
+[assemblies:system.data.dll]
+*/
+
+namespace ThreeVR.DBTools.ExternalCSharp
+{
+		using IDataReader = System.Data.IDataReader;
+		using DataReader = ThreeVR.Db.Sql.DataReader;
+
+		public class CleanApplianceChannels
+		{
+				[STAThread]
+				public static bool Execute(DataReader dataReader)
+				{
+						if ("%SETTINGS.ENTERPRISE%" != "true")
+						{
+							return true;
+						}
+						var sqlStmt = "select c1.channelid, c2.channelid from appliances a, channels c1, channels c2 " +
+								"where c1.channelid > c2.channelid and c1.applianceid = a.applianceid and c2.applianceid = a.applianceid and c1.localid = c2.localid " +
+								"  order by a.name, c1.localid asc, c1.channelid desc";
+						IDataReader reader = dataReader.ExecuteQuery(sqlStmt);
+						var processed = new List<int>();
+						var merge = new List<KeyValuePair<int, int>>();
+						while (reader.Read())
+						{
+								bool resolved = false;
+								try
+								{
+										var c1Id = reader.GetInt32(0);
+										var c2Id = reader.GetInt32(1);
+
+										if (processed.Contains(c2Id))
+										{
+												continue;
+										}
+										processed.Add(c2Id);
+										merge.Add(new KeyValuePair<int, int>(c1Id, c2Id));
+								}
+								catch
+								{
+								}
+						}
+						reader.Close();
+
+						foreach (var keyValuePair in merge)
+						{
+								try
+								{
+										var c1Id = keyValuePair.Key;
+										var c2Id = keyValuePair.Value;
+
+										dataReader.ExecuteNonQuery("update audiorecording set audiochannelid =" + c1Id + " where audiochannelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update alertchannels set channelid =" + c1Id + " where channelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update channelgroupchannels  set channelid =" + c1Id + " where channelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update eventsindex  set channelid =" + c1Id + " where channelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update persons  set  firstSeenChannelid =" + c1Id + " where firstSeenChannelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update persons  set  lastseenchannelid =" + c1Id + " where lastseenchannelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update pluginsettingvalues  set channelid =" + c1Id + " where channelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update profilegroups  set  creationchannelid =" + c1Id + " where creationchannelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("update videos  set channelid =" + c1Id + " where channelid = " + c2Id + ";");
+										dataReader.ExecuteNonQuery("delete from channels where channelid = " + c2Id);
+								}
+								catch
+								{
+								}
+						}
+						return true;
+				}
+		}
+}
+]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="olivier" from="7.2.0.11" fminor="975" to="7.2.0.11" tminor="1090" date="5/29/13">
+    <comment>Moving creation of stretch config table; it was being dynamically created in pm but we may as well just have it there.</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+IF NOT EXISTS(SELECT * FROM sys.sysobjects WHERE name='StretchConfig')
+CREATE TABLE StretchConfig(
+StretchIndex INT, 
+StretchSn VARCHAR(16), 
+StretchChanNum INT
+)
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="olivier" from="7.2.0.11" fminor="1090" to="7.2.0.11" tminor="1140" date="6/19/13">
+    <comment>Create a table to keep track of event frames transfered to the cloud.</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+-- Move to create database script file
+--CREATE TABLE eventframes
+--	(
+--	  eventframeid BIGINT NOT NULL
+--						  IDENTITY(1, 1) ,
+--	  eventid BIGINT NOT NULL ,
+--	  frameid BIGINT NOT NULL ,
+--	  PRIMARY KEY ( eventframeid )
+--	)
+
+--ALTER TABLE eventframes
+--ADD 
+--CONSTRAINT FK1_EventFrames_Frames FOREIGN KEY (frameid) REFERENCES frames (frameid) ON DELETE CASCADE ON UPDATE CASCADE,
+--CONSTRAINT FK1_EventFrames_EventsIndex FOREIGN KEY (eventid) REFERENCES eventsindex (eventid) ON DELETE CASCADE ON UPDATE CASCADE
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="olivier" from="7.2.0.11" fminor="1140" to="7.2.0.11" tminor="1153" date="6/19/13">
+    <comment>Add a cross join table for faster lookup of motion user frames, this mod make take minutes on systems with very large numbers of motion events</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+-- Move to create database script file
+--CREATE TABLE motioneventuserframes(
+--motioneventuserframeid bigint not null IDENTITY(1,1), 
+--motioneventid bigint not null, 
+--framemotiondataid bigint not null,
+--primary key (motioneventuserframeid)
+--)
+
+--ALTER TABLE motioneventuserframes
+--ADD
+--CONSTRAINT FK1_MotionEventUserFrames_FrameMotionData FOREIGN KEY (framemotiondataid) REFERENCES framemotiondata (framemotiondataid) ON DELETE CASCADE ON UPDATE CASCADE,
+--CONSTRAINT FK1_MotionEventUserFrames_MotionEvents FOREIGN KEY (motioneventid) REFERENCES motionevents (motioneventid) ON DELETE CASCADE ON UPDATE CASCADE
+
+--INSERT INTO motioneventuserframes(motioneventid, framemotiondataid) select motioneventid, framemotiondataid from framemotiondata where usercreated=1;
+				]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="Mark He" from="7.2.0.11" fminor="1153" to="7.2.0.11" tminor="2380" date="01/02/14">
+    <comment>Add a column 'processnumber' to table performance</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[ALTER TABLE performance ADD processnumber int NULL;]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="Reggie" from="7.2.3.1" fminor="2017" to="7.2.0.11" tminor="2380" date="03/05/14">
+    <comment>Rollback the DB version from 7.2.3.1 to 7.2.0.11</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[]]>
+      </step>
+    </steps>
+  </mod>
+  <mod author="eden" from="7.2.0.11" fminor="2380" to="7.2.0.11" tminor="2381" date="4/1/14">
+    <comment>DB Change for extended storage server</comment>
+    <steps>
+      <step type="inline_sql">
+        <![CDATA[
+          CREATE TABLE backupdests (
+            backupDestId BIGINT NOT NULL IDENTITY(1,1),
+            type TINYINT NOT NULL DEFAULT '1',
+            configurationXml nvarchar(max) NOT NULL,
+            isActive TINYINT NOT NULL DEFAULT '1',
+            priority INT NOT NULL DEFAULT '1',
+            PRIMARY KEY  (backupDestId)
+          );
+
+	  CREATE TABLE backupsummary(
+            backupSummaryId BIGINT NOT NULL IDENTITY(1,1),
+            backupDestId BIGINT NOT NULL,
+            beginTime DATETIME2 NOT NULL default '0001-01-01 00:00:00',
+            endTime DATETIME2 NOT NULL default '9999-12-31 23:59:59',
+            fileNum BIGINT NOT NULL,
+            PRIMARY KEY (backupSummaryId),
+            CONSTRAINT FK1_backupsummary_backupdests FOREIGN KEY (backupDestId) REFERENCES backupdests(backupDestId) ON DELETE CASCADE
+            );
+
+	  CREATE TABLE backupdevices(
+            backupDeviceId BIGINT NOT NULL IDENTITY(1,1),
+            path VARCHAR(255) NOT NULL,
+            isActive TINYINT NOT NULL DEFAULT '1',
+            PRIMARY KEY (backupDeviceId)
+            );
+
+	  CREATE TABLE backupclients(
+	        backupClientId BIGINT NOT NULL IDENTITY(1,1),
+            clientGuid VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            lastActiveDateTime DATETIME2 NOT NULL default '0001-01-01 00:00:00',
+            PRIMARY KEY (backupClientId)
+            );
+
+	  CREATE TABLE backupfailedevents(
+            backupFailedEventId BIGINT NOT NULL IDENTITY(1,1),
+            object VARCHAR(255) NOT NULL,
+            operation CHAR(1) NOT NULL,
+            retryTimes TINYINT NOT NULL DEFAULT '0',
+            PRIMARY KEY (backupFailedEventId),
+            CONSTRAINT chk_Operation CHECK (operation IN('D','P'))
+            );
+			
+        ]]>
+      </step>
+    </steps>
+  </mod>
+  <!--Use the build numbers in Team City for the minor version changes-->
+</mods>

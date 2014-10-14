@@ -1,0 +1,11 @@
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\dbmods.xml
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe.config
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.exe
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\EzeDbTools.pdb
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\Libraries.EzeDbTools.dll
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\Library.EzeDbCommon.dll
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\Libraries.EzeDbTools.pdb
+X:\git\Projects\EzeDbTools\EzeDbTools\bin\Debug\Library.EzeDbCommon.pdb
+X:\git\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTool.csprojResolveAssemblyReference.cache
+X:\git\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.exe
+X:\git\Projects\EzeDbTools\EzeDbTools\obj\Debug\EzeDbTools.pdb

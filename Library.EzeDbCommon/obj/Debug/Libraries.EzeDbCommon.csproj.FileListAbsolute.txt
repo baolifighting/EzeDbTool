@@ -1,0 +1,9 @@
+F:\Projects\EzeDbTools\Library.EzeDbCommon\bin\Debug\Library.EzeDbCommon.dll
+F:\Projects\EzeDbTools\Library.EzeDbCommon\bin\Debug\Library.EzeDbCommon.pdb
+F:\Projects\EzeDbTools\Library.EzeDbCommon\obj\Debug\Library.EzeDbCommon.dll
+F:\Projects\EzeDbTools\Library.EzeDbCommon\obj\Debug\Library.EzeDbCommon.pdb
+X:\git\Projects\EzeDbTools\Library.EzeDbCommon\bin\Debug\Library.EzeDbCommon.dll
+X:\git\Projects\EzeDbTools\Library.EzeDbCommon\bin\Debug\Library.EzeDbCommon.pdb
+X:\git\Projects\EzeDbTools\Library.EzeDbCommon\obj\Debug\Libraries.EzeDbCommon.csprojResolveAssemblyReference.cache
+X:\git\Projects\EzeDbTools\Library.EzeDbCommon\obj\Debug\Library.EzeDbCommon.dll
+X:\git\Projects\EzeDbTools\Library.EzeDbCommon\obj\Debug\Library.EzeDbCommon.pdb
